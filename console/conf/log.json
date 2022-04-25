@@ -1,0 +1,19 @@
+{
+    "log":{"level":"ERROR","encoder":"console"},
+    "audit": {
+        "sync": {
+            "file": {
+                "exclude_hostname":true,
+                "compress": true,
+                "enable": true,
+                "localtime": true,
+                "maxage": 300,
+                "maxbackups": 5,
+                "maxsize": 10000
+            },
+            "stdout": {
+                "disable": true
+            }
+        }
+    }
+}

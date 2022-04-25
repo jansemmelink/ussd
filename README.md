@@ -1,3 +1,29 @@
+# Done #
+- console is working with basic router, menu, prompt and final
+- rest-sessions is working
+- rest-ussd is working and using rest-sessions (no menu items except exit defined...)
+
+# Next #
+- test with multiple instances of rest-ussd (need to specify addr:port on command line)
+- make nats USSD service
+    consider existing framework or rather close go-routines while waiting and let any instance reply
+
+    make long call with res on generic topic that all nats ussd instances listen on
+    send reply to original service waiting for a reply
+    test with ms-client
+- make ms client for USSD to call existing ms-vservices-xxx services through NATS and test with delay
+
+- make ext calls that takes time to complete and show that res can be handled by other instance
+        rest-ussd will wait for reply (good) but ussd will not keep open
+        let resp come to generic ussd res topic on NATS then any rest-ussd can process
+- load items from file
+- mix items from packages and files
+- implement more types of items and generic statemets/switches etc.
+- try simple web UI withinput form or simple react app
+
+- implement few examples to see how possible it is
+- try rest API to manage ussd definitions? i.e. run-time menu definition and editing safed to file - over multiple instances...
+
 # USSD Processing #
 
 USSD request is either:
