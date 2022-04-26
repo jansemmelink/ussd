@@ -197,7 +197,7 @@ func Run(ussdSvc ussd.Service) {
 			} //if aborted by just hitting <enter>
 
 			//got user input
-			if err := ussd.UserContinue(context.Background(), id, input, consoleResponder{resChan: resChan}); err != nil {
+			if err := ussd.UserContinue(context.Background(), id, nil, input, consoleResponder{resChan: resChan}); err != nil {
 				fmt.Fprintf(os.Stdout, "Continue failed: %+v\n", err)
 				fmt.Fprintf(os.Stdout, "==========[ E R R O R ]================\n")
 				close(resChan)

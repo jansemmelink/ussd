@@ -2,8 +2,11 @@
 - console is working with basic router, menu, prompt and final
 - rest-sessions is working
 - rest-ussd is working and using rest-sessions (no menu items except exit defined...)
+- nats-ussd is working with in-memory session
 
 # Next #
+- change nats-ussd to use external http sessions and test with multiple instances
+
 - test with multiple instances of rest-ussd (need to specify addr:port on command line)
 - make nats USSD service
     consider existing framework or rather close go-routines while waiting and let any instance reply
@@ -20,9 +23,9 @@
 - mix items from packages and files
 - implement more types of items and generic statemets/switches etc.
 - try simple web UI withinput form or simple react app
-
 - implement few examples to see how possible it is
 - try rest API to manage ussd definitions? i.e. run-time menu definition and editing safed to file - over multiple instances...
+- consider how NGF need to change to use this
 
 # USSD Processing #
 

@@ -74,7 +74,7 @@ func (m *Menu) HandleInput(ctx context.Context, input string) (string, Item, err
 			return "item not yet implemented", nil, nil
 		}
 
-		log.Debugf("menu(%s) selected(%s) -> %T", m.id, input)
+		log.Debugf("menu(%s) selected(%s) -> %T", m.id, input, next)
 		return "", next, nil //selected menu item
 	}
 	log.Debugf("invalid menu selection - display menu again")

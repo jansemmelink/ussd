@@ -31,12 +31,16 @@ func NewSession(ss Sessions, id string, t0, t1 time.Time, data map[string]interf
 		startTime:  t0,
 		lastTime:   t1,
 		data:       data,
-		namesToSet: map[string]interface{}{},
+		namesToSet: data,
 		namesToDel: map[string]bool{},
 	}
 	if s.data == nil {
 		s.data = map[string]interface{}{}
 	}
+	if s.namesToSet == nil {
+		s.namesToSet = map[string]interface{}{}
+	}
+	log.Debugf("Created Local Session(%s): %+v", s.id, s.data)
 	return s
 }
 
@@ -99,7 +103,6 @@ func UserStart(ctx context.Context, id string, data map[string]interface{}, init
 	if initItem == nil {
 		return errors.Errorf("cannot start whit init==nil")
 	}
-
 	s, err := sessions.New(id, data)
 	if err != nil {
 		return errors.Wrapf(err, "failed to create session(%s)", id)
@@ -110,10 +113,16 @@ func UserStart(ctx context.Context, id string, data map[string]interface{}, init
 
 //UserContinue() is called when user provides input after a prompt
 //id must be same as was used for UserStart()
-func UserContinue(ctx context.Context, id string, input string, responder Responder) error {
+func UserContinue(ctx context.Context, id string, data map[string]interface{}, input string, responder Responder) error {
 	s, err := sessions.Get(id)
 	if err != nil {
 		return errors.Wrapf(err, "failed to get session(%s)", id)
+	}
+	if s == nil {
+		return errors.Errorf("session(%s) does not exist", id)
+	}
+	for n, v := range data {
+		s.Set(n, v)
 	}
 	ctx = context.WithValue(ctx, CtxSession{}, s)
 	currentItemID, _ := s.Get("current_item_id").(string)
@@ -156,6 +165,7 @@ func userInput(ctx context.Context, s Session, fromItem ItemWithInputHandler, in
 			if xerr := s.Sync(); xerr != nil {
 				log.Errorf("failed to sync session data: %+v", xerr)
 			}
+			log.Debugf("Synced session(%s)", s.ID())
 		}
 	}()
 

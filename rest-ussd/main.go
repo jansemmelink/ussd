@@ -117,7 +117,7 @@ func handleUSSDCont(httpRes http.ResponseWriter, httpReq *http.Request) {
 	}()
 	id := "http:" + msisdn
 	ctx := context.Background()
-	if err := ussd.UserContinue(ctx, id, req.Text, responder{resChan: resChan}); err != nil {
+	if err := ussd.UserContinue(ctx, id, nil, req.Text, responder{resChan: resChan}); err != nil {
 		http.Error(httpRes, err.Error(), http.StatusInternalServerError)
 		return
 	}
