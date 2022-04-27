@@ -7,6 +7,7 @@ import (
 
 	"bitbucket.org/vservices/utils/v4/errors"
 	"bitbucket.org/vservices/utils/v4/logger"
+	"github.com/google/uuid"
 )
 
 var log = logger.NewLogger()
@@ -99,21 +100,38 @@ type CtxSession struct{}
 //	id must be unique session id, e.g. made up of "<source>:<msisdn>" when from GSM MAP USSD,
 //		which will prevent multiple sessions to exist for the same subscriber
 //		it could be new uuid for each request, but then you must ensure old sessions are cleaned up
-func UserStart(ctx context.Context, id string, data map[string]interface{}, initItem ItemWithInputHandler, ussdCode string, responder Responder) error {
+//	data is optional and added to new session
+//	initItem is first item to exec and it must define next, i.e. must be ItemRoute()
+//	input would be the ussd code that was dialed
+//	responder is used to respond to the user
+func UserStart(ctx context.Context, id string, data map[string]interface{}, initItem ItemRoute, input string, responder Responder) error {
+	if id == "" {
+		id = uuid.New().String()
+	}
 	if initItem == nil {
-		return errors.Errorf("cannot start whit init==nil")
+		return errors.Errorf("cannot start with init==nil")
+	}
+	if responder == nil {
+		return errors.Errorf("cannot start with responder==nil")
 	}
 	s, err := sessions.New(id, data)
 	if err != nil {
 		return errors.Wrapf(err, "failed to create session(%s)", id)
 	}
+	s.Set("input", input)
 	ctx = context.WithValue(ctx, CtxSession{}, s)
-	return userInput(ctx, s, initItem, ussdCode, responder)
+	return userInput(ctx, s, initItem, input, responder)
 }
 
 //UserContinue() is called when user provides input after a prompt
-//id must be same as was used for UserStart()
+//	id must be same as was used for UserStart()
+//	data is optional and will be set in existing session
+//	input is from user
+//	responder is used to respond to the user
 func UserContinue(ctx context.Context, id string, data map[string]interface{}, input string, responder Responder) error {
+	if responder == nil {
+		return errors.Errorf("cannot continue with responder==nil")
+	}
 	s, err := sessions.Get(id)
 	if err != nil {
 		return errors.Wrapf(err, "failed to get session(%s)", id)
@@ -130,11 +148,12 @@ func UserContinue(ctx context.Context, id string, data map[string]interface{}, i
 	if !ok {
 		return errors.Errorf("session(%s).currentItemID(%s) not defined", s.ID(), currentItemID)
 	}
-	currentItemWithInputHandler, ok := currentItem.(ItemWithInputHandler)
-	if !ok {
+	_, okPrompt := currentItem.(ItemPrompt)
+	_, okMenu := currentItem.(ItemMenu)
+	if !okPrompt && !okMenu {
 		return errors.Errorf("session(%s).currentItemID(%s) type %T does not handle input", s.ID(), currentItemID, currentItem)
 	}
-	return userInput(ctx, s, currentItemWithInputHandler, input, responder)
+	return userInput(ctx, s, currentItem, input, responder)
 }
 
 func UserAbort(ctx context.Context, id string) error {
@@ -146,7 +165,7 @@ func UserAbort(ctx context.Context, id string) error {
 }
 
 //userInput is called from UserStart() or UserCont() to process the user input
-func userInput(ctx context.Context, s Session, fromItem ItemWithInputHandler, input string, responder Responder) (err error) {
+func userInput(ctx context.Context, s Session, fromItem Item, input string, responder Responder) (err error) {
 	var currentItem Item = fromItem
 
 	defer func() {

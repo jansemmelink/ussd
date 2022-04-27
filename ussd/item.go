@@ -3,25 +3,49 @@ package ussd
 import "context"
 
 //Item is any type of USSD service processing step
-//Return:
-//	"",   <next>, nil   (next!=current) to jump to <next> immediately and call <next>.Exec()
-//  "",   <next>, nil   (next==current) to waiting for a reply then call next.HandleReply()
-//	text, <next>, nil   (next==current) to wait for user input then call next.HandleInput()
-//	text, nil,    nil   for final response
-//	"",   nil,    <err> to end with system error
 type Item interface {
 	ID() string
-	Exec(ctx context.Context) (text string, next Item, err error)
 }
 
-type ItemWithInputHandler interface {
-	Item
-	HandleInput(ctx context.Context, input string) (text string, next Item, err error) //handles user dialed USSD string or user input after menu/prompt
+//ItemStep is any item that does not change what happens next
+type ItemStep interface {
+	Exec(ctx context.Context) (err error)
 }
 
-type ItemWithReplyHandler interface {
+//ItemRoute is any item that can change what happens next
+type ItemRoute interface {
+	Exec(ctx context.Context) (next []Item, err error)
+}
+
+//item that display to the user (question, menu or final)
+type ItemUser interface {
 	Item
-	HandleReply(ctx context.Context, reply interface{}) (text string, next Item, err error) //handles reply from a service operation
+	Render() string
+}
+
+//ItemFinal display final message and terminate the session
+type ItemFinal interface {
+	ItemUser
+}
+
+//ItemPrompt ask a question and store the answer (it is a step, does not change next)
+//by the time Exec() is called, session["input"] contains user input and is cleared
+type ItemPrompt interface {
+	ItemStep
+	ItemUser
+}
+
+//ItemMenu display a menu and the selection determine next
+//by the time Exec() is called, session["input"] contains user input and is cleared
+type ItemMenu interface {
+	ItemRoute
+	ItemUser
+}
+
+//ItemReqAndWait is a step where item has to wait for a reply before proceeding
+type ItemReqWait interface {
+	ItemStep
+	Request(ctx context.Context) error
 }
 
 var (

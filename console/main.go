@@ -1,5 +1,8 @@
 package main
 
+import "bitbucket.org/vservices/ms-vservices-ussd/examples/pcm"
+
 func main() {
-	Run(nil)
+	pcmInit := pcm.Item()
+	Run(pcmInit)
 }

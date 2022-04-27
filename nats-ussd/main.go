@@ -8,6 +8,8 @@ import (
 
 	"bitbucket.org/vservices/ms-vservices-ussd/comms"
 	"bitbucket.org/vservices/ms-vservices-ussd/comms/nats"
+	"bitbucket.org/vservices/ms-vservices-ussd/examples/pcm"
+	httpSessionsClient "bitbucket.org/vservices/ms-vservices-ussd/rest-sessions/client"
 	"bitbucket.org/vservices/ms-vservices-ussd/ussd"
 	"bitbucket.org/vservices/utils/v4/errors"
 	"bitbucket.org/vservices/utils/v4/logger"
@@ -17,6 +19,7 @@ import (
 var log = logger.NewLogger()
 
 func main() {
+	ussd.SetSessions(httpSessionsClient.New("http://localhost:8100"))
 	nc := nats.Config{
 		Name:               "ussd",
 		Url:                "nats://localhost:4222",
@@ -39,19 +42,19 @@ func main() {
 	<-x
 }
 
-var initItem ussd.ItemWithInputHandler
+// var initItem ussd.ItemWithInputHandler
 
-func init() {
-	menu123 := ussd.NewMenu("123", "*** MAIN MENU ***").
-		With("one", nil).
-		With("two", nil).
-		With("three", nil).
-		With("four", nil).
-		With("Exit", ussd.NewFinal("exit", "Goodbye."))
+// func init() {
+// 	menu123 := ussd.NewMenu("123", "*** MAIN MENU ***").
+// 		With("one", nil).
+// 		With("two", nil).
+// 		With("three", nil).
+// 		With("four", nil).
+// 		With("Exit", ussd.NewFinal("exit", "Goodbye."))
 
-	initItem = ussd.NewRouter("mainRouter").
-		WithCode("*123#", menu123)
-}
+// 	initItem = ussd.NewRouter("mainRouter").
+// 		WithCode("*123#", menu123)
+// }
 
 type service struct {
 	c comms.Handler
@@ -105,7 +108,7 @@ func (s service) handleRequest(data []byte, replyAddress string) {
 	id := "nats:" + m.Request.Msisdn
 	switch m.Request.Type {
 	case "START":
-		if err = ussd.UserStart(ctx, id, ussdData, initItem, m.Request.Text, responder{h: s.c}); err != nil {
+		if err = ussd.UserStart(ctx, id, ussdData, pcm.Item() /*initItem*/, m.Request.Text, responder{h: s.c}); err != nil {
 			err = errors.Wrapf(err, "failed to start USSD")
 			return
 		}

@@ -25,12 +25,12 @@ const imsiPattern = `[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9
 
 var imsiRegex = regexp.MustCompile("^" + imsiPattern + "$")
 
-func Run(ussdSvc ussd.Service) {
+func Run(initItem ussd.ItemWithInputHandler) {
 	msisdnPtr := flag.String("msisdn", "27821234567", "MSISDN in international format (10..15 digits)")
 	imsiPtr := flag.String("imsi", "", "IMSI (default: not defined)")
 	maxlPtr := flag.Int("maxl", 182, "Maximum length (valid 50..500)")
-	builtInServicesPtr := flag.Bool("builtin", false, "Include default built in service for demonstration purposes")
-	initItemIdPtr := flag.String("init", "builtInRouter", "Init item id to start all services from")
+	//builtInServicesPtr := flag.Bool("builtin", false, "Include default built in service for demonstration purposes")
+	//initItemIdPtr := flag.String("init", "builtInRouter", "Init item id to start all services from")
 	flag.Parse()
 
 	if len(*msisdnPtr) < 10 || len(*msisdnPtr) > 15 || (*msisdnPtr)[0] == '0' {
@@ -48,22 +48,22 @@ func Run(ussdSvc ussd.Service) {
 		panic(fmt.Sprintf("--maxl=%d is not 50..500", *maxlPtr))
 	}
 
-	//load default services to demonstrate USSD workings
-	if *builtInServicesPtr {
-		if err := builtIn(); err != nil {
-			panic(fmt.Sprintf("failed to create built-in services: %+v", err))
-		}
-	}
+	// //load default services to demonstrate USSD workings
+	// if *builtInServicesPtr {
+	// 	if err := builtIn(); err != nil {
+	// 		panic(fmt.Sprintf("failed to create built-in services: %+v", err))
+	// 	}
+	// }
 
-	var initItem ussd.ItemWithInputHandler
-	if item, ok := ussd.ItemByID(*initItemIdPtr); !ok {
-		panic(fmt.Sprintf("--init=%s not found", *initItemIdPtr))
-	} else {
-		initItem, ok = item.(ussd.ItemWithInputHandler)
-		if !ok {
-			panic(fmt.Sprintf("--init=%s of type %T does not handle input", *initItemIdPtr, item))
-		}
-	}
+	// var initItem ussd.ItemWithInputHandler
+	// if item, ok := ussd.ItemByID(*initItemIdPtr); !ok {
+	// 	panic(fmt.Sprintf("--init=%s not found", *initItemIdPtr))
+	// } else {
+	// 	initItem, ok = item.(ussd.ItemWithInputHandler)
+	// 	if !ok {
+	// 		panic(fmt.Sprintf("--init=%s of type %T does not handle input", *initItemIdPtr, item))
+	// 	}
+	// }
 
 	//load custom services from file(s)
 
@@ -245,22 +245,22 @@ type consoleResponse struct {
 	resType ussd.Type
 }
 
-func builtIn() error {
+// func builtIn() error {
 
-	menu123_1 := ussd.NewMenu("123-1-menu", "*** SUB ***")
+// 	menu123_1 := ussd.NewMenu("123-1-menu", "*** SUB ***")
 
-	hello := ussd.NewFinal("hello", "Hello <name> <age>")
-	askAge := ussd.NewPrompt("ask_age", "Enter your age", "your_age", hello)
-	askName := ussd.NewPrompt("ask_name", "Enter your name", "your_name", askAge)
+// 	hello := ussd.NewFinal("hello", "Hello <name> <age>")
+// 	askAge := ussd.NewPrompt("ask_age", "Enter your age", "your_age", hello)
+// 	askName := ussd.NewPrompt("ask_name", "Enter your name", "your_name", askAge)
 
-	menu123 := ussd.NewMenu("123-main", "*** 123 ***").
-		With("sub menu", menu123_1).
-		With("two", askName)
+// 	menu123 := ussd.NewMenu("123-main", "*** 123 ***").
+// 		With("sub menu", menu123_1).
+// 		With("two", askName)
 
-	menu123_1 = menu123_1.With("back", menu123)
+// 	menu123_1 = menu123_1.With("back", menu123)
 
-	ussd.NewRouter("builtInRouter").
-		WithPrefix("*123", menu123)
+// 	ussd.NewRouter("builtInRouter").
+// 		WithPrefix("*123", menu123)
 
-	return nil
-}
+// 	return nil
+// }

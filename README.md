@@ -3,9 +3,17 @@
 - rest-sessions is working
 - rest-ussd is working and using rest-sessions (no menu items except exit defined...)
 - nats-ussd is working with in-memory session
+- nats-ussd also uses rest-sessions and can run multiple instances and continue in another instance
+- updated example/pcm 
 
 # Next #
-- change nats-ussd to use external http sessions and test with multiple instances
+- busy adding example/pcm into nats-ussd, console, and rest-ussd (testing with nats-ussd)
+- fix in PCM/ussd:  prompt in menu option []next cause error because it return text.
+        let menu just return []Item and add to session and exec normally not allowing return Next before end of list
+
+- do long service call from nats and see if call response can be handled by other instance
+        and should be able to restart nats-ussd while call is being processed
+- create examples in code and files to show how deasy/difficult custom scripting/programming would be
 
 - test with multiple instances of rest-ussd (need to specify addr:port on command line)
 - make nats USSD service
@@ -26,9 +34,9 @@
 - implement few examples to see how possible it is
 - try rest API to manage ussd definitions? i.e. run-time menu definition and editing safed to file - over multiple instances...
 - consider how NGF need to change to use this
+- make ussd.ReqType and ussd.ResType separate because not completely the same
 
 # USSD Processing #
-
 USSD request is either:
 
 - BEGIN <ussd code> to start a new USSD session

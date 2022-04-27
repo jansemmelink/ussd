@@ -38,17 +38,21 @@ func (r *Router) WithPrefix(prefix string, item Item) *Router {
 	return r
 }
 
-func (r *Router) WithRegex(pattern string, item Item) *Router {
+func (r *Router) WithRegex(pattern string, regexNames []string, item Item) *Router {
 	regex, err := regexp.Compile("^" + pattern + "$")
 	if err != nil {
 		panic(fmt.Sprintf("invalid regex pattern: %s: %+v", pattern, err))
 	}
-	r.byRegex = append(r.byRegex, regexRoute{regex: regex, item: item})
+	if regex.NumSubexp() != len(regexNames) {
+		panic(fmt.Sprintf("regex(%s) has %d subexpressions but you specified %d names(%v)", pattern, regex.NumSubexp(), len(regexNames), regexNames))
+	}
+	r.byRegex = append(r.byRegex, regexRoute{regex: regex, names: regexNames, item: item})
 	return r
 }
 
 type regexRoute struct {
 	regex *regexp.Regexp
+	names []string
 	item  Item
 }
 
@@ -76,6 +80,10 @@ func (r Router) HandleInput(ctx context.Context, input string) (string, Item, er
 	}
 	for _, route := range r.byRegex {
 		if route.regex.MatchString(input) {
+			if len(route.names) > 0 {
+				subMatches := route.regex.FindStringSubmatchIndex(input)
+				log.Debugf("matched(%s) -> %+v", input, subMatches)
+			}
 			return "", route.item, nil
 		}
 	}
