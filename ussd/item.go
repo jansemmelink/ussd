@@ -9,11 +9,13 @@ type Item interface {
 
 //ItemStep is any item that does not change what happens next
 type ItemStep interface {
+	Item
 	Exec(ctx context.Context) (err error)
 }
 
 //ItemRoute is any item that can change what happens next
 type ItemRoute interface {
+	Item
 	Exec(ctx context.Context) (next []Item, err error)
 }
 

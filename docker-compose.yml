@@ -1,0 +1,21 @@
+version: "3.8"
+services:
+    nats:
+        image: adaptittelco/nats:2.3.4
+        restart: unless-stopped
+        environment:
+            - TZ=${TIMEZONE}
+        volumes:
+            - ./conf/nats:/etc/nats
+        ports:
+            - "4222:4222"
+            - "6222:6222"
+            - "7222:7222"
+            - "8222:8222"
+        networks:
+            - vservices
+############
+# NETWORKS #
+############
+networks:
+    vservices:

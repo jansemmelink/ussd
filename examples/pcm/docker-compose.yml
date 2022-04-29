@@ -1,0 +1,26 @@
+version: "3.8"
+services:
+    #################
+    # MARIADB IMAGE #
+    #################
+    mariadb:
+        image: mariadb:10.7
+        restart: unless-stopped
+        environment:
+            - TZ=${TIMEZONE}
+            - MYSQL_ROOT_PASSWORD=asdf@123456
+            - MYSQL_PASSWORD=vservices
+            - MYSQL_USER=vservices
+            - MYSQL_DATABASE=vservices
+        volumes:
+            - ./data/maria-db:/var/lib/mysql
+            - ./conf/mariadb/init.d:/docker-entrypoint-initdb.d
+        ports:
+            - "3309:3306"
+        networks:
+            - vservices
+############
+# NETWORKS #
+############
+networks:
+    vservices:
