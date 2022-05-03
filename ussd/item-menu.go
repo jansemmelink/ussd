@@ -8,7 +8,7 @@ import (
 	"bitbucket.org/vservices/utils/v4/errors"
 )
 
-//Menu implements ussd.ItemWithInputHandler
+//Menu implements ussd.ItemUsrPrompt
 type Menu struct {
 	id       string
 	title    string
@@ -49,7 +49,8 @@ func (m *Menu) With(caption string, nextItems ...Item) *Menu {
 	return m
 }
 
-func (m *Menu) Exec(ctx context.Context) (string, Item, error) {
+func (m *Menu) Render(ctx context.Context) string {
+	//s := ctx.Value(CtxSession{}).(Session)
 	if !m.rendered {
 		//first time:
 		//substitute values into text
@@ -72,39 +73,17 @@ func (m *Menu) Exec(ctx context.Context) (string, Item, error) {
 	}
 
 	//prompt user for input showing this page
-	return menuPage, m, nil
+	return menuPage
 }
 
-func (m *Menu) HandleInput(ctx context.Context, input string) (string, Item, error) {
+func (m *Menu) Process(ctx context.Context, input string) ([]Item, error) {
 	log.Debugf("menu(%s) got input(%s) ...", m.id, input)
 	if i64, err := strconv.ParseInt(input, 10, 64); err == nil && i64 >= 1 && int(i64) <= len(m.options) {
 		nextItems := m.options[i64-1].nextItems
 		if len(nextItems) == 0 {
-			return "menu item not yet implemented", nil, nil
+			return []Item{m}, errors.Errorf("not yet implemented") //display same item with error
 		}
-
-		//execute all leading items except the last one, expecting text="" and next=nil for all of them
-		//this allows you to set variables etc before jumping into the selected next ussd item
-		for i := 0; i < len(nextItems)-1; i++ {
-			log.Debugf("menu(%s).item[%d].next[%d(len:%d)].id(%s).%T.Exec()...", m.id, i64, i, len(nextItems), nextItems[i].ID(), nextItems[i])
-			itemText, itemNext, itemErr := nextItems[i].Exec(ctx)
-			if itemErr != nil {
-				return "", nil, errors.Wrapf(itemErr, "menu(%s).item[%d].next[%d].id(%s).Exec failed", m.id, i64-1, i, nextItems[i].ID())
-			}
-			if itemText != "" {
-				return "", nil, errors.Errorf("menu(%s).item[%d].next[%d].id(%s).Exec() returned text=\"%s\"", m.id, i64-1, i, nextItems[i].ID(), itemText)
-			}
-			if itemNext != nil {
-				return "", nil, errors.Errorf("menu(%s).item[%d].next[%d].id(%s).Exec() returned next.id(%s)=%T", m.id, i64-1, i, nextItems[i].ID(), itemNext.ID(), itemNext)
-			}
-		}
-
-		//return the last nextItem
-		log.Debugf("1")
-		next := nextItems[len(nextItems)-1]
-		log.Debugf("menu(%s) selected(%s) -> %T", m.id, input, next)
-		return "", next, nil //selected menu item
+		return nextItems, nil
 	}
-	log.Debugf("invalid menu selection - display menu again")
-	return m.Exec(ctx) //invalid selection - display same menu again
+	return []Item{m}, nil //redisplay without error
 }

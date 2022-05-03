@@ -33,7 +33,6 @@ var (
 )
 
 func handleNewSession(httpRes http.ResponseWriter, httpReq *http.Request) {
-	logger.Debugf("new session")
 	id := mux.Vars(httpReq)["id"]
 	if id == "" {
 		http.Error(httpRes, "missing id", http.StatusBadRequest)
@@ -59,28 +58,46 @@ func handleNewSession(httpRes http.ResponseWriter, httpReq *http.Request) {
 	s.StartTime = &t0
 	s.LastTime = &t0
 	sessions[id] = s
+	log.Debugf("new session(%s): %+v", id, s)
 	httpRes.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(httpRes).Encode(s)
 }
 
 func handleGetSession(httpRes http.ResponseWriter, httpReq *http.Request) {
-	logger.Debugf("get session")
 	id := mux.Vars(httpReq)["id"]
 	if id == "" {
 		http.Error(httpRes, "missing id", http.StatusBadRequest)
 		return
 	}
+	names := httpReq.URL.Query()["names"]
 	if s, ok := sessions[id]; ok {
+		//found the session
 		httpRes.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(httpRes).Encode(s)
+		//return whole session or selected names only
+		if len(names) == 0 {
+			log.Debugf("get session(%s) -> %+v", id, s)
+			json.NewEncoder(httpRes).Encode(s)
+		} else {
+			sOut := session{
+				ID:        s.ID,
+				Data:      map[string]interface{}{},
+				StartTime: s.StartTime,
+				LastTime:  s.LastTime,
+			}
+			for _, name := range names {
+				if value, ok := s.Data[name]; ok {
+					sOut.Data[name] = value
+				}
+			}
+			log.Debugf("get session(%s).(names=%+v) -> %+v", id, names, sOut)
+			json.NewEncoder(httpRes).Encode(sOut)
+		}
 		return
 	}
 	http.Error(httpRes, "session not found", http.StatusNotFound)
-	return
 }
 
 func handleUpdSession(httpRes http.ResponseWriter, httpReq *http.Request) {
-	logger.Debugf("upd session")
 	id := mux.Vars(httpReq)["id"]
 	if id == "" {
 		http.Error(httpRes, "missing id", http.StatusBadRequest)
@@ -118,17 +135,17 @@ func handleUpdSession(httpRes http.ResponseWriter, httpReq *http.Request) {
 	t1 := time.Now()
 	s.LastTime = &t1
 	sessions[id] = s
+	log.Debugf("upd session(%s): %+v", id, s)
 	httpRes.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(httpRes).Encode(s)
-	return
 }
 
 func handleDelSession(httpRes http.ResponseWriter, httpReq *http.Request) {
-	logger.Debugf("delete session")
 	id := mux.Vars(httpReq)["id"]
 	if id == "" {
 		http.Error(httpRes, "missing id", http.StatusBadRequest)
 		return
 	}
+	log.Debugf("delete session(%s)", id)
 	delete(sessions, id)
 }

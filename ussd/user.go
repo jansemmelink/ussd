@@ -2,20 +2,21 @@ package ussd
 
 import (
 	"context"
+	"fmt"
 
 	"bitbucket.org/vservices/utils/v4/errors"
 	"github.com/google/uuid"
 )
 
-//UserStart() is called when user initiates a new USSD session
+//Start() is called when user initiates a new session
 //	id must be unique session id, e.g. made up of "<source>:<msisdn>" when from GSM MAP USSD,
 //		which will prevent multiple sessions to exist for the same subscriber
 //		it could be new uuid for each request, but then you must ensure old sessions are cleaned up
 //	data is optional and added to new session
-//	initItem is first item to exec and it must define next, i.e. must be ItemRoute()
-//	input would be the ussd code that was dialed
-//	responder is used to respond to the user
-func UserStart(ctx context.Context, id string, data map[string]interface{}, initItem ItemRoute, input string, responder Responder) error {
+//	initItem is first item to exec and it must define next, i.e. must be ItemSvcExec()
+//	initRequest would be the ussd code that was dialed and will be stored in session.Set("init_request",initRequest)
+//	responder is used to respond to the user once (redefined each time user provides input)
+func Start(ctx context.Context, id string, data map[string]interface{}, initItem ItemSvcExec, initRequest string, responder Responder, responderKey string) error {
 	if id == "" {
 		id = uuid.New().String()
 	}
@@ -29,17 +30,24 @@ func UserStart(ctx context.Context, id string, data map[string]interface{}, init
 	if err != nil {
 		return errors.Wrapf(err, "failed to create session(%s)", id)
 	}
-	s.Set("input", input)
+	s.Set("init_request", initRequest)
 	ctx = context.WithValue(ctx, CtxSession{}, s)
-	return userInput(ctx, s, initItem, input, responder)
+
+	nextItems, err := initItem.Exec(ctx)
+	if err != nil {
+		return errors.Wrapf(err, "init item(%s).Exec() failed", initItem.ID())
+	}
+	s.Set("responder_id", responder.ID())
+	s.Set("responder_key", responderKey)
+	return proceed(ctx, s, nextItems)
 }
 
-//UserContinue() is called when user provides input after a prompt
+//UserInput() continues a waiting session with input entered by the user
 //	id must be same as was used for UserStart()
 //	data is optional and will be set in existing session
 //	input is from user
-//	responder is used to respond to the user
-func UserContinue(ctx context.Context, id string, data map[string]interface{}, input string, responder Responder) error {
+//	responder is used to respond to the user (it could be different from previous responder)
+func UserInput(ctx context.Context, id string, data map[string]interface{}, input string, responder Responder, responderKey string) error {
 	if responder == nil {
 		return errors.Errorf("cannot continue with responder==nil")
 	}
@@ -59,13 +67,124 @@ func UserContinue(ctx context.Context, id string, data map[string]interface{}, i
 	if !ok {
 		return errors.Errorf("session(%s).currentItemID(%s) not defined", s.ID(), currentItemID)
 	}
-	_, okPrompt := currentItem.(ItemPrompt)
-	_, okMenu := currentItem.(ItemMenu)
-	if !okPrompt && !okMenu {
-		return errors.Errorf("session(%s).currentItemID(%s) type %T does not handle input", s.ID(), currentItemID, currentItem)
+	itemUsrPrompt, ok := currentItem.(ItemUsrPrompt)
+	if !ok {
+		return errors.Errorf("session(%s).currentItemID(%s) type %T does not handle user input", s.ID(), currentItemID, currentItem)
 	}
-	return userInput(ctx, s, currentItem, input, responder)
+	nextItems, err := itemUsrPrompt.Process(ctx, input)
+	if err != nil {
+		//display error to user and repeat the prompt
+		text := err.Error()
+		if text != "" {
+			text += "\n"
+		}
+		text += itemUsrPrompt.Render(ctx)
+		responder.Respond(ctx, responderKey, Response{Type: ResponseTypePrompt, Text: text})
+		return nil
+	}
+
+	//input accepted, proceed and respond later
+	s.Set("responder_id", responder.ID())
+	s.Set("responder_key", responderKey)
+	return proceed(ctx, s, nextItems)
 }
+
+//process() is called from Start() or Continue() to process the user input or service response
+func proceed(ctx context.Context, s Session, moreNextItems []Item) (err error) {
+	var currentItem Item
+	defer func() {
+		if err != nil {
+			//end the session on error
+			log.Errorf("USSD Failed: %+v", err)
+			if xerr := sessions.Del(s.ID()); xerr != nil {
+				log.Errorf("failed to delete session after error: %+v", xerr)
+			}
+		} else if currentItem == nil {
+			//end the session normally
+			log.Debugf("USSD Ended")
+			if xerr := sessions.Del(s.ID()); xerr != nil {
+				log.Errorf("failed to delete session after ended: %+v", xerr)
+			}
+		} else {
+			//responded to user or requested something
+			//now wait for continuation
+			s.Set("current_item_id", currentItem.ID())
+			if xerr := s.Sync(); xerr != nil {
+				log.Errorf("failed to sync session data: %+v", xerr)
+			}
+			log.Debugf("Synced session(%s)", s.ID())
+		}
+	}()
+
+	//load next items already queued for this session
+	nextItems, err := loadNextItems(s)
+	if err != nil {
+		return errors.Wrapf(err, "failed to load queued next items")
+	}
+	if len(moreNextItems) > 0 {
+		nextItems = append(moreNextItems, nextItems...)
+	}
+
+	for len(nextItems) > 0 {
+		currentItem = nextItems[0]
+		nextItems = nextItems[1:]
+		{
+			ids := []string{}
+			for _, i := range nextItems {
+				ids = append(ids, fmt.Sprintf("%T(%s)", i, i.ID()))
+			}
+			log.Debugf("Current item(%s), %d next: %+v", currentItem.ID(), len(nextItems), ids)
+		}
+
+		if itemUsr, ok := currentItem.(ItemUsr); ok {
+			log.Debugf("item(%s)=%T is ItemUser", currentItem.ID(), currentItem)
+			//user item: needs responder
+			responderID := s.Get("responder_id").(string)
+			responderKey := s.Get("responder_key").(string)
+			if responderID == "" {
+				return errors.Errorf("responder_id not defined")
+			}
+			responder := responderByID[responderID]
+			if responder == nil {
+				return errors.Errorf("responder[%s] not found", responderID)
+			}
+			res := Response{
+				Text: itemUsr.Render(ctx),
+			}
+			if _, ok := itemUsr.(ItemUsrPrompt); !ok {
+				currentItem = nil //final response
+				res.Type = ResponseTypeFinal
+			} else {
+				res.Type = ResponseTypePrompt
+			}
+			return responder.Respond(ctx, responderKey, res)
+		} //if user interaction
+
+		//server side item (not rendering to user)
+		if svcExec, ok := currentItem.(ItemSvcExec); ok {
+			log.Debugf("item(%s)=%T is ItemSvcExec", currentItem.ID(), currentItem)
+			moreNextItems, err := svcExec.Exec(ctx)
+			if err != nil {
+				return errors.Wrapf(err, "item(%s).Exec() failed", currentItem.ID())
+			}
+			if len(moreNextItems) > 0 {
+				nextItems = append(moreNextItems, nextItems...)
+			}
+			continue
+		}
+
+		if svcWait, ok := currentItem.(ItemSvcWait); ok {
+			log.Debugf("item(%s)=%T is ItemSvcWait", currentItem.ID(), currentItem)
+			if err := svcWait.Request(ctx); err != nil {
+				return errors.Wrapf(err, "item(%s) failed to request", currentItem.ID())
+			}
+			return nil //wait for response
+		}
+		log.Errorf("item(%s)=%T is ???", currentItem.ID(), currentItem)
+		return errors.Errorf("not expected to get here: item(%s)=%T", currentItem.ID(), currentItem)
+	} //loop
+	return errors.Errorf("not expected to get here - should have ended with final response!")
+} //proceed()
 
 func UserAbort(ctx context.Context, id string) error {
 	log.Errorf("USSD Aborted by user")
@@ -75,118 +194,15 @@ func UserAbort(ctx context.Context, id string) error {
 	return nil
 }
 
-//userInput is called from UserStart() or UserCont() to process the user input
-func userInput(ctx context.Context, s Session, fromItem Item, input string, responder Responder) (err error) {
-	var currentItem Item = fromItem
-
-	defer func() {
-		if err != nil {
-			log.Errorf("USSD Failed: %+v", err)
-			if xerr := sessions.Del(s.ID()); xerr != nil {
-				log.Errorf("failed to delete session after error: %+v", xerr)
-			}
-		} else if currentItem == nil {
-			log.Debugf("USSD Ended")
-			if xerr := sessions.Del(s.ID()); xerr != nil {
-				log.Errorf("failed to delete session after ended: %+v", xerr)
-			}
+func loadNextItems(s Session) ([]Item, error) {
+	nextItemIDs, _ := s.Get("next_item_ids").([]string)
+	nextItems := []Item{}
+	for i, itemID := range nextItemIDs {
+		if item, ok := ItemByID(itemID); !ok {
+			return nil, errors.Errorf("unknown item(%s) in next_item_ids[%d]=%v", itemID, i, nextItemIDs)
 		} else {
-			s.Set("current_item_id", currentItem.ID())
-			if xerr := s.Sync(); xerr != nil {
-				log.Errorf("failed to sync session data: %+v", xerr)
-			}
-			log.Debugf("Synced session(%s)", s.ID())
+			nextItems = append(nextItems, item)
 		}
-	}()
-
-	//start by processing user input then loop until need to wait or respond
-	var text string
-	var nextItem Item
-	text, nextItem, err = fromItem.HandleInput(ctx, input)
-	_nextID := "nil"
-	if nextItem != nil {
-		_nextID = nextItem.ID()
 	}
-	log.Debugf("%T(%s).HandleInput(%s) -> text=%s,next(%s)=%T,err=%+v", fromItem, fromItem.ID(), input, text, _nextID, nextItem, err)
-	for {
-		//Expect one of these:
-		//	"",   <next>, nil   (next!=current) to jump to <next> immediately and call <next>.Exec()
-		//  "",   <next>, nil   (next==current) to waiting for a reply then call <next>.HandleReply()
-		//	text, <next>, nil   (next!=nil)     to wait for user input then call <next>.HandleInput() (usually next would be current item)
-		//	text, nil,    nil   for final response
-		//	"",   nil,    <err> to end with system error
-		if err != nil {
-			log.Errorf("err: %+v", err)
-			return errors.Wrapf(err, "item(%s).Exec() failed", currentItem.ID())
-		}
-		if text == "" && nextItem == nil {
-			log.Errorf("no return")
-			return errors.Wrapf(err, "item(%s).Exec() returned no text/next/err", currentItem.ID())
-		}
-
-		if text != "" {
-			log.Debugf("responding...")
-			//need to respond to the user with final/prompt
-			responderKey, _ := s.Get("responder_key").(string)
-			log.Debugf("key=(%T)%+v", responderKey, responderKey)
-			if nextItem == nil {
-				//no next, i.e. final response to the user and end the session
-				currentItem = nil
-				log.Debugf("sending final response...")
-				if err = responder.Respond(responderKey, TypeFinal, text); err != nil {
-					log.Errorf("failed to send final response")
-					return errors.Wrapf(err, "failed to send final response")
-				}
-				log.Debugf("sent final")
-				return nil
-			}
-
-			//not final, it is a prompt of some kind (question or menu)
-			//next must be same as current item and be able to deal with user input
-			if nextItem != currentItem {
-				return errors.Errorf("item(%s).Exec() returned prompt(%s) with next(%s) != current item", currentItem.ID(), text, nextItem.ID())
-			}
-			if _, ok := nextItem.(ItemWithInputHandler); !ok {
-				return errors.Errorf("item(%s).Exec() returned prompt(%s) with next(%s) which does not handle input", currentItem.ID(), text, nextItem.ID())
-			}
-
-			currentItem = nextItem
-			if err = responder.Respond(responderKey, TypePrompt, text); err != nil {
-				currentItem = nil
-				return errors.Wrapf(err, "failed to send prompt")
-			}
-			return nil
-		} //if sending user response/prompt
-
-		//text == "", so not yet responding to the user
-		if nextItem != currentItem {
-			log.Debugf("jump...")
-			//immediately jump to and execute another item
-			currentItem = nextItem
-			text, nextItem, err = currentItem.Exec(ctx)
-			continue
-		}
-
-		//nextItem == currentItem, thus
-		//Exec() started some operation and need to wait for reply
-		if _, ok := currentItem.(ItemWithReplyHandler); !ok {
-			log.Errorf("cannot handle reply")
-			return errors.Errorf("item(%s) started operation but cannot handle a reply", currentItem.ID())
-		}
-		//return to let session wait for reply
-		//it will resume when reply is received at any instance
-		log.Debugf("waiting...")
-		return nil
-	} //loop
-} //userInput()
-
-//menu
-//prompt
-//assigment
-//if or switch
-//service call
-//HTTP
-//SQL
-//cache get/set
-//script
-//switch language
+	return nextItems, nil
+} //loadNextItems()

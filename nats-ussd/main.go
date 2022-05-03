@@ -34,7 +34,11 @@ func main() {
 	if err != nil {
 		panic(fmt.Sprintf("cannot create comms handler: %+v", err))
 	}
-	s := service{c: commsHandler}
+
+	r := responder{ch: commsHandler}
+	ussd.AddResponder(r)
+
+	s := service{ch: commsHandler}
 	if err := commsHandler.Subscribe("ussd", false, s.handleRequest); err != nil {
 		panic(fmt.Sprintf("failed to subscriber: %+v", err))
 	}
@@ -57,7 +61,7 @@ func main() {
 // }
 
 type service struct {
-	c comms.Handler
+	ch comms.Handler
 }
 
 func (s service) handleRequest(data []byte, replyAddress string) {
@@ -79,7 +83,7 @@ func (s service) handleRequest(data []byte, replyAddress string) {
 					},
 				}
 				jsonRes, _ := json.Marshal(res)
-				s.c.Send(nil, replyAddress, jsonRes)
+				s.ch.Send(nil, replyAddress, jsonRes)
 			}
 		}
 	}()
@@ -108,13 +112,14 @@ func (s service) handleRequest(data []byte, replyAddress string) {
 	id := "nats:" + m.Request.Msisdn
 	switch m.Request.Type {
 	case "START":
-		if err = ussd.UserStart(ctx, id, ussdData, pcm.Item() /*initItem*/, m.Request.Text, responder{h: s.c}); err != nil {
+		log.Debugf("Starting")
+		if err = ussd.Start(ctx, id, ussdData, pcm.Item() /*initItem*/, m.Request.Text, responder{ch: s.ch}, m.Header.ReplyAddress); err != nil {
 			err = errors.Wrapf(err, "failed to start USSD")
 			return
 		}
 
 	case "CONTINUE":
-		if err = ussd.UserContinue(ctx, id, ussdData, m.Request.Text, responder{h: s.c}); err != nil {
+		if err = ussd.UserInput(ctx, id, ussdData, m.Request.Text, responder{ch: s.ch}, m.Header.ReplyAddress); err != nil {
 			err = errors.Wrapf(err, "failed to continue USSD")
 			return
 		}
@@ -137,16 +142,16 @@ func (s service) handleRequest(data []byte, replyAddress string) {
 }
 
 type Message struct {
-	Header   MessageHeader `json:"header"`
-	Request  *ussdRequest  `json:"request,omitempty"`
-	Response *ussdResponse `json:"response,omitempty"`
+	Header   MessageHeader  `json:"header"`
+	Request  *ussdRequest   `json:"request,omitempty"`
+	Response *ussd.Response `json:"response,omitempty"`
 }
 
 type MessageHeader struct {
-	Timestamp string `json:"timestamp"`
-	TTL       int    `json:"ttl"`
-	//ReplyAddress string `json:"reply_address"`
-	Result *MessageHeaderResult `json:"result,omitempty"`
+	Timestamp    string               `json:"timestamp"`
+	TTL          int                  `json:"ttl"`
+	ReplyAddress string               `json:"reply_address"`
+	Result       *MessageHeaderResult `json:"result,omitempty"`
 }
 
 type MessageHeaderResult struct {
@@ -174,23 +179,20 @@ const tsformat = "2006-01-02 15:04:05.000"
 // } // if not subject
 
 type responder struct {
-	h comms.Handler
+	ch comms.Handler
 }
 
 func (r responder) ID() string { return "nats" }
 
-func (r responder) Respond(key interface{}, resType ussd.Type, resText string) error {
-	log.Debugf("Respond(%v, %s, %s)...", key, resType, resText)
+func (r responder) Respond(ctx context.Context, key interface{}, res ussd.Response) error {
+	log.Debugf("Respond(%v, %s, %s)...", key, res.Type, res.Text)
 	subject := key.(string)
-	res := Message{
-		Header: MessageHeader{},
-		Response: &ussdResponse{
-			Type: resType.String(),
-			Text: resText,
-		},
+	resMsg := Message{
+		Header:   MessageHeader{},
+		Response: &res,
 	}
-	jsonRes, _ := json.Marshal(res)
-	if err := r.h.Send(nil, subject, jsonRes); err != nil {
+	jsonRes, _ := json.Marshal(resMsg)
+	if err := r.ch.Send(nil, subject, jsonRes); err != nil {
 		log.Errorf("failed to respond to subject(%s): %+v", subject, err)
 	}
 	return nil

@@ -7,47 +7,25 @@ type Item interface {
 	ID() string
 }
 
-//ItemStep is any item that does not change what happens next
-type ItemStep interface {
+type ItemSvcExec interface {
 	Item
-	Exec(ctx context.Context) (err error)
+	Exec(ctx context.Context) (nextItems []Item, err error) //err to stop
 }
 
-//ItemRoute is any item that can change what happens next
-type ItemRoute interface {
+type ItemSvcWait interface {
 	Item
-	Exec(ctx context.Context) (next []Item, err error)
+	Request(ctx context.Context) (err error)                    //err to stop
+	Process(ctx context.Context, value interface{}) (err error) //err to stop
 }
 
-//item that display to the user (question, menu or final)
-type ItemUser interface {
+type ItemUsr interface {
 	Item
-	Render() string
+	Render(ctx context.Context) string
 }
 
-//ItemFinal display final message and terminate the session
-type ItemFinal interface {
-	ItemUser
-}
-
-//ItemPrompt ask a question and store the answer (it is a step, does not change next)
-//by the time Exec() is called, session["input"] contains user input and is cleared
-type ItemPrompt interface {
-	ItemStep
-	ItemUser
-}
-
-//ItemMenu display a menu and the selection determine next
-//by the time Exec() is called, session["input"] contains user input and is cleared
-type ItemMenu interface {
-	ItemRoute
-	ItemUser
-}
-
-//ItemReqAndWait is a step where item has to wait for a reply before proceeding
-type ItemReqWait interface {
-	ItemStep
-	Request(ctx context.Context) error
+type ItemUsrPrompt interface {
+	ItemUsr
+	Process(ctx context.Context, input string) (nextItems []Item, err error) //return self to repeat prompt, err to display to user
 }
 
 var (

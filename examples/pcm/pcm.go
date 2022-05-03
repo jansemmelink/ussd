@@ -9,9 +9,9 @@ import (
 	"github.com/google/uuid"
 )
 
-var pcmRouter ussd.ItemWithInputHandler
+var pcmRouter ussd.ItemSvcExec
 
-func Item() ussd.ItemWithInputHandler {
+func Item() ussd.ItemSvcExec {
 	if pcmRouter != nil {
 		return pcmRouter
 	}
@@ -56,16 +56,16 @@ func Item() ussd.ItemWithInputHandler {
 		With("Block/Unblock Call Me Messages", blockMenu).
 		With("Send Recharge Me",
 			ussd.Set("type", "PRM"),
-			ussd.NewPrompt("enter_bnumber_pcm", "Enter phone number", "bnumber", nil), //todo: allow NewXxx() without id to use uuid
+			ussd.NewPrompt("enter_bnumber_prm", "Enter phone number", "bnumber"), //todo: allow NewXxx() without id to use uuid
 			deliver{},
 		).
 		With("Send Call Me",
-			ussd.Set("type", "PRM"),
-			ussd.NewPrompt("enter_bnumber_prm", "Enter phone number", "bnumber", nil),
+			ussd.Set("type", "PCM"),
+			ussd.NewPrompt("enter_bnumber_pcm", "Enter phone number", "bnumber"),
 			deliver{},
 		).
 		With("Change Name",
-			ussd.NewPrompt("enter_name", "Enter your name:", "name", nil),
+			ussd.NewPrompt("enter_name", "Enter your name:", "name"),
 			profileSetItems("pcm_name"),
 			ussd.NewFinal("pcm_name_changed", "Your name was changed to <pcm_name>. You may change it again in 1 day."),
 		).
@@ -97,13 +97,13 @@ type deliver struct{}
 
 func (deliver) ID() string { return "pcm_deliver" }
 
-func (deliver deliver) Exec(ctx context.Context) (string, ussd.Item, error) {
+func (deliver deliver) Exec(ctx context.Context) ([]ussd.Item, error) {
 	// bnumber, _ := s.Get("bnumber")
 	// if err := SendSMS(bnumber, "Please Call "+s.Msisdn+" - "+"<advert>"); err != nil {
 	// 	return s, errors.Errorf("failed to send")
 	// }
 	// return NewFinal("CallMe Delivered to " + bnumber + "-" + "<advert>").Render(s)
-	return "", nil, errors.Errorf("NYI")
+	return nil, errors.Errorf("NYI")
 }
 
 func profileGetItems(names ...string) ussd.Item {
@@ -121,7 +121,7 @@ type profileGet struct {
 
 func (pg profileGet) ID() string { return pg.id }
 
-func (pg profileGet) Exec(ctx context.Context) (string, ussd.Item, error) {
+func (pg profileGet) Exec(ctx context.Context) ([]ussd.Item, error) {
 	s := ctx.Value(ussd.CtxSession{}).(ussd.Session)
 	msisdn := s.Get("msisdn")
 	query := "SELECT name,value FROM subscriber WHERE msisdn=?"
@@ -141,18 +141,18 @@ func (pg profileGet) Exec(ctx context.Context) (string, ussd.Item, error) {
 
 	rows, err := db.Query(query, args...)
 	if err != nil {
-		return "", nil, errors.Wrapf(err, "failed to query profile(names:%v)", pg.names)
+		return nil, errors.Wrapf(err, "failed to query profile(names:%v)", pg.names)
 	}
 	for rows.Next() {
 		var name string
 		var value string
 		if err := rows.Scan(&name, &value); err != nil {
-			return "", nil, errors.Wrapf(err, "failed to parse DB row")
+			return nil, errors.Wrapf(err, "failed to parse DB row")
 		}
 		s.Set(name, value)
 		log.Debugf("Profile got msisdn(%s).(%s=\"%s\")", msisdn, name, value)
 	}
-	return "", nil, nil
+	return nil, nil
 } //profileGet.Exec()
 
 func profileSetItems(names ...string) ussd.Item {

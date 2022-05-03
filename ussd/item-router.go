@@ -60,21 +60,20 @@ func (r Router) ID() string {
 	return r.id
 } //Router.ID()
 
-func (r Router) Exec(ctx context.Context) (string, Item, error) {
-	return "", nil, errors.Errorf("router cannot exec - only handle input to route on USSD codes")
-} //Router.Exec()
+func (r Router) Exec(ctx context.Context) ([]Item, error) {
+	s := ctx.Value(CtxSession{}).(Session)
+	input := s.Get("init_request").(string)
 
-func (r Router) HandleInput(ctx context.Context, input string) (string, Item, error) {
 	//routing: select a service based on the USSD code
 	//start by looking up the exact code match, which uses a map hash
 	//and will be the quickest match
 	if item, ok := r.byCode[input]; ok {
-		return "", item, nil //found exact match
+		return []Item{item}, nil //found exact match
 	} else {
 		//run through prefix matches, e.g. *123* and *123# both go to xyz
 		for prefix, item := range r.byPrefix {
 			if len(input) >= len(prefix) && input[0:len(prefix)] == prefix {
-				return "", item, nil //match prefix
+				return []Item{item}, nil //match prefix
 			}
 		}
 	}
@@ -84,8 +83,8 @@ func (r Router) HandleInput(ctx context.Context, input string) (string, Item, er
 				subMatches := route.regex.FindStringSubmatchIndex(input)
 				log.Debugf("matched(%s) -> %+v", input, subMatches)
 			}
-			return "", route.item, nil
+			return []Item{route.item}, nil
 		}
 	}
-	return "Unknown USSD code", nil, nil
-} //Router.HandleInput()
+	return nil, errors.Errorf("unknown USSD code")
+} //Router.Exec()

@@ -19,6 +19,6 @@ type Final struct {
 
 func (f Final) ID() string { return f.id }
 
-func (f Final) Exec(ctx context.Context) (string, Item, error) {
-	return f.text, nil, nil
+func (f Final) Render(ctx context.Context) string {
+	return f.text
 }

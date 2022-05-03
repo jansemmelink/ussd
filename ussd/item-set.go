@@ -24,8 +24,8 @@ func (set set) ID() string {
 	return set.id
 }
 
-func (set set) Exec(ctx context.Context) (string, Item, error) {
+func (set set) Exec(ctx context.Context) ([]Item, error) {
 	s := ctx.Value(CtxSession{}).(Session)
 	s.Set(set.name, set.value)
-	return "", nil, nil
+	return nil, nil
 }

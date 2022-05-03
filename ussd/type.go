@@ -2,23 +2,28 @@ package ussd
 
 import "fmt"
 
-type Type int
+type ResponseType int
 
 const (
-	TypeRedirect Type = iota
-	TypePrompt
-	TypeFinal
+	ResponseTypeRedirect ResponseType = iota
+	ResponseTypePrompt
+	ResponseTypeFinal
 )
 
-func (t Type) String() string {
+func (t ResponseType) String() string {
 	switch t {
-	case TypeRedirect:
+	case ResponseTypeRedirect:
 		return "redirect"
-	case TypePrompt:
+	case ResponseTypePrompt:
 		return "prompt"
-	case TypeFinal:
+	case ResponseTypeFinal:
 		return "final"
 	default:
 		return fmt.Sprintf("unknown(%d)", t)
 	}
+}
+
+type Response struct {
+	Type ResponseType `json:"type"`
+	Text string       `json:"text"`
 }
