@@ -160,7 +160,7 @@ func profileSetItems(names ...string) ussd.Item {
 		panic("missing names")
 	}
 	//todo: make sure names are snake_case
-	return profileGet{
+	return profileSet{
 		id:    uuid.New().String(),
 		names: names,
 	}

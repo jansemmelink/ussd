@@ -3,8 +3,9 @@ package nats
 import (
 	"crypto/tls"
 	"net/url"
+	"time"
 
-	"bitbucket.org/vservices/ms-vservices-ussd/comms"
+	"bitbucket.org/vservices/ms-vservices-ussd/ms"
 	"bitbucket.org/vservices/utils/v4/errors"
 	"bitbucket.org/vservices/utils/v4/logger"
 	datatype "bitbucket.org/vservices/utils/v4/type"
@@ -12,9 +13,8 @@ import (
 )
 
 type Config struct {
-	Name               string            `json:"name"`
-	Url                string            `json:"url"`
-	NormalSubscription bool              `json:"normal_subscription"`
+	Domain             string            `json:"domain" doc:"NATS client name that will be used for subscription on '<domain>.*', e.g. use 'ussd'"`
+	Url                string            `json:"url" doc:"NATS connection URL, defaults to 'nats://127.0.0.1:4222'"`
 	Timeout            datatype.Duration `json:"timeout"`
 	MaxReconnects      int               `json:"max_reconnects"`
 	ReconnectWait      datatype.Duration `json:"reconnect_wait"`
@@ -32,8 +32,8 @@ func (c *Config) Validate() error {
 	if c == nil {
 		return errors.Errorf("nil.Validate()")
 	}
-	if len(c.Name) <= 0 {
-		return errors.Errorf("missing name")
+	if len(c.Domain) <= 0 {
+		return errors.Errorf("missing domain")
 	}
 	if len(c.Url) <= 0 {
 		c.Url = nats.DefaultURL
@@ -46,20 +46,26 @@ func (c *Config) Validate() error {
 		}
 	}
 	if c.MaxReconnects == 0 {
+		c.MaxReconnects = 10
+	}
+	if c.MaxReconnects < 0 {
 		return errors.Errorf("invalid max_reconnects:%d", c.MaxReconnects)
 	}
-	if c.ReconnectWait <= 0 {
+	if c.ReconnectWait == 0 {
+		c.ReconnectWait = datatype.Duration(time.Second * 2)
+	}
+	if c.ReconnectWait < 0 {
 		return errors.Errorf("invalid reconnect_wait:\"%s\"", c.ReconnectWait)
 	}
 	return nil
 } //Config.Validate()
 
-func (c *Config) New() (comms.Handler, error) {
+func (c *Config) New() (ms.Handler, error) {
 	if err := c.Validate(); err != nil {
 		return nil, errors.Wrapf(err, "invalid nats config")
 	}
 	var options []nats.Option
-	options = append(options, nats.Name(c.Name))
+	options = append(options, nats.Name(c.Domain))
 	options = append(options, nats.Timeout(c.Timeout.Duration()))
 	options = append(options, nats.MaxReconnects(c.MaxReconnects))
 	options = append(options, nats.ReconnectWait(c.ReconnectWait.Duration()))
@@ -89,11 +95,5 @@ func (c *Config) New() (comms.Handler, error) {
 		return nil, errors.Wrap(err, "failed to connect to NATS")
 	}
 	h.headersSupported = h.conn.HeadersSupported()
-	h.replySubscription, err = h.conn.Subscribe(
-		h.replySubjectPrefix+"*",
-		h.handleReply)
-	if err != nil {
-		return nil, errors.Wrapf(err, "failed to subscribe to reply subject")
-	}
 	return h, nil
 } //Config.New()

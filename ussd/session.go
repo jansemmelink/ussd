@@ -75,7 +75,6 @@ func (s *session) Set(name string, value interface{}) {
 	s.data[name] = value
 	s.namesToSet[name] = value
 	delete(s.namesToDel, name) //make sure its not deleted anymore
-	return
 }
 
 func (s *session) Del(name string) {

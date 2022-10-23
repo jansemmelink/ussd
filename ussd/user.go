@@ -79,7 +79,7 @@ func UserInput(ctx context.Context, id string, data map[string]interface{}, inpu
 			text += "\n"
 		}
 		text += itemUsrPrompt.Render(ctx)
-		responder.Respond(ctx, responderKey, Response{Type: ResponseTypePrompt, Text: text})
+		responder.Respond(ctx, responderKey, Response{Type: ResponseTypeResponse, Message: text})
 		return nil
 	}
 
@@ -149,13 +149,13 @@ func proceed(ctx context.Context, s Session, moreNextItems []Item) (err error) {
 				return errors.Errorf("responder[%s] not found", responderID)
 			}
 			res := Response{
-				Text: itemUsr.Render(ctx),
+				Message: itemUsr.Render(ctx),
 			}
 			if _, ok := itemUsr.(ItemUsrPrompt); !ok {
 				currentItem = nil //final response
-				res.Type = ResponseTypeFinal
+				res.Type = ResponseTypeRelease
 			} else {
-				res.Type = ResponseTypePrompt
+				res.Type = ResponseTypeResponse
 			}
 			return responder.Respond(ctx, responderKey, res)
 		} //if user interaction

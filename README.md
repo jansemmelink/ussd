@@ -5,15 +5,15 @@
 - nats-ussd is working with in-memory session
 - nats-ussd also uses rest-sessions and can run multiple instances and continue in another instance
 - updated example/pcm 
+- updated item type interfaces and updated lots of code in ussd and pcm to work like that
+- PCM in ussd-nats seems to work except deliver is not implemented and ItemSvcWait not yet used.
 
 # Next #
-- busy adding example/pcm into nats-ussd, console, and rest-ussd (testing with nats-ussd)
-- fix in PCM/ussd:  prompt in menu option []next cause error because it return text.
-        let menu just return []Item and add to session and exec normally not allowing return Next before end of list
-
-- do long service call from nats and see if call response can be handled by other instance
-        and should be able to restart nats-ussd while call is being processed
+- do long service call with an ItemSvcWait and see if call response can be handled by other instance
+        and should also be able to restart a single nats-ussd while call is being processed and have it continue.
+- seems to handle user continue in any instance - need to verify again after item type changes
 - create examples in code and files to show how deasy/difficult custom scripting/programming would be
+- need to update console and rest version of service to demo
 
 - test with multiple instances of rest-ussd (need to specify addr:port on command line)
 - make nats USSD service

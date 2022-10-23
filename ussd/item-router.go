@@ -11,8 +11,8 @@ import (
 func NewRouter(id string) *Router {
 	r := &Router{
 		id:       id,
-		byCode:   map[string]Item{},
-		byPrefix: map[string]Item{},
+		byCode:   map[string][]Item{},
+		byPrefix: map[string][]Item{},
 		byRegex:  []regexRoute{},
 	}
 	itemByID[id] = r
@@ -23,18 +23,18 @@ func NewRouter(id string) *Router {
 //Router implements ItemWithInputHandler
 type Router struct {
 	id       string
-	byCode   map[string]Item
-	byPrefix map[string]Item //todo: check longest first - not reliable as it is here!
+	byCode   map[string][]Item
+	byPrefix map[string][]Item //todo: check longest first - not reliable as it is here!
 	byRegex  []regexRoute
 }
 
-func (r *Router) WithCode(code string, item Item) *Router {
-	r.byCode[code] = item
+func (r *Router) WithCode(code string, nextItems ...Item) *Router {
+	r.byCode[code] = nextItems
 	return r
 }
 
-func (r *Router) WithPrefix(prefix string, item Item) *Router {
-	r.byPrefix[prefix] = item
+func (r *Router) WithPrefix(prefix string, nextItem ...Item) *Router {
+	r.byPrefix[prefix] = nextItem
 	return r
 }
 
@@ -67,13 +67,13 @@ func (r Router) Exec(ctx context.Context) ([]Item, error) {
 	//routing: select a service based on the USSD code
 	//start by looking up the exact code match, which uses a map hash
 	//and will be the quickest match
-	if item, ok := r.byCode[input]; ok {
-		return []Item{item}, nil //found exact match
+	if items, ok := r.byCode[input]; ok {
+		return items, nil //found exact match
 	} else {
 		//run through prefix matches, e.g. *123* and *123# both go to xyz
-		for prefix, item := range r.byPrefix {
+		for prefix, items := range r.byPrefix {
 			if len(input) >= len(prefix) && input[0:len(prefix)] == prefix {
-				return []Item{item}, nil //match prefix
+				return items, nil //match prefix
 			}
 		}
 	}

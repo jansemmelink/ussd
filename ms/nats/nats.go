@@ -1,31 +1,57 @@
 package nats
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
+	"reflect"
+	"strings"
 	"sync"
+	"time"
 
-	"bitbucket.org/vservices/ms-vservices-ussd/comms"
+	"bitbucket.org/vservices/ms-vservices-ussd/ms"
 	"bitbucket.org/vservices/utils/v4/errors"
 	"bitbucket.org/vservices/utils/v4/logger"
 	"github.com/nats-io/nats.go"
 )
 
+var log = logger.NewLogger()
+
 type handler struct {
-	config            Config
-	conn              *nats.Conn
-	headersSupported  bool
-	subscriptionsLock sync.Mutex
-	subscriptions     map[string]*nats.Subscription
-	// defaultReplyQ      string
+	config             Config
+	conn               *nats.Conn
+	headersSupported   bool
+	subscriptionsLock  sync.Mutex
+	subscriptions      map[string]*nats.Subscription
 	replySubjectPrefix string
 	replySubscription  *nats.Subscription
 	replyChannelsLock  sync.Mutex
 	replyChannels      map[string]chan *nats.Msg
+	service            ms.Service
+}
+
+func (h *handler) Run(s ms.Service) error {
+	h.service = s //must set before subscription to have it in handleRequest
+	if err := h.Subscribe(h.config.Domain+".*", false, h.handleRequest); err != nil {
+		return errors.Wrapf(err, "failed to subscribe to request subject")
+	}
+
+	var err error
+	if h.replySubscription, err = h.conn.Subscribe(h.replySubjectPrefix+"*", h.handleReply); err != nil {
+		return errors.Wrapf(err, "failed to subscribe to reply subject")
+	}
+
+	//todo: graceful shutdown
+	log.Debugf("NATS service(%s) running...", h.config.Domain)
+	x := make(chan bool)
+	<-x
+	log.Debugf("NATS service(%s) stopped...", h.config.Domain)
+	return nil
 }
 
 //Subscribe() to group queue (only one instance get the request) or broadcast
 // queue (each instance get it)
-func (h *handler) Subscribe(subject string, broadcast bool, callback comms.HandlerFunc) error {
+func (h *handler) Subscribe(subject string, broadcast bool, callback ms.HandlerFunc) error {
 	if h == nil {
 		return errors.Errorf("nil.Subscribe()")
 	}
@@ -55,6 +81,118 @@ func (h *handler) Subscribe(subject string, broadcast bool, callback comms.Handl
 	//h.defaultReplyQ = subject + ".reply"
 	return nil
 } //handler.Subscribe()
+
+func (h *handler) handleRequest(data []byte, replyAddress string) {
+	log.Debugf("Received %s", string(data))
+	var err error
+	var echoRequest interface{}
+	var res interface{}
+	defer func() {
+		resMessage := ms.Message{
+			Header: ms.MessageHeader{
+				Timestamp: time.Now().Local().Format(ms.TimestampFormat),
+			},
+			Request:  echoRequest,
+			Response: res,
+		}
+		if err != nil {
+			log.Errorf("DEFER err: %+v", err)
+			resMessage.Header.Result = &ms.MessageHeaderResult{
+				Code:        -1, //todo: get code & code stack from err
+				Description: "failed",
+				Details:     fmt.Sprintf("%+v", err),
+			}
+		} else {
+			resMessage.Header.Result = &ms.MessageHeaderResult{
+				Code:        0,
+				Description: "success",
+				Details:     "",
+			}
+		}
+		if replyAddress != "" {
+			log.Errorf("DEFER reply to %s", replyAddress)
+			jsonRes, _ := json.Marshal(resMessage)
+			h.Send(nil, replyAddress, jsonRes)
+		}
+	}()
+
+	var m ms.Message
+	if err = json.Unmarshal(data, &m); err != nil {
+		err = errors.Wrapf(err, "cannot unmarshal JSON", string(data))
+		return
+	}
+
+	log.Debugf("RECV: %+v", m)
+	if m.Header.Result != nil || m.Response != nil {
+		err = errors.Errorf("discard response message on request subject")
+		return
+	}
+
+	//determine operation name from provider.name="/<domain>/<operName>"
+	var operName string
+	if parts := strings.SplitN(m.Header.Provider.Name, "/", 3); len(parts) == 3 {
+		operName = parts[2]
+	} else {
+		err = errors.Errorf("provider.name=\"%s\" != \"/<domain>/<oper>\"", m.Header.Provider.Name)
+		return
+	}
+	o, ok := h.service.GetOper(operName)
+	if !ok {
+		err = errors.Errorf("unknown operName(%s) in provider.name=\"%s\"", operName, m.Header.Provider.Name)
+		return
+	}
+
+	if m.Header.EchoRequest {
+		echoRequest = m.Request
+	}
+
+	var reqValuePtr reflect.Value
+	if o.ReqType() != nil {
+		if m.Request == nil {
+			err = errors.Errorf("missing request")
+			return
+		}
+		reqValuePtr = reflect.New(o.ReqType())
+		jsonRequest, _ := json.Marshal(m.Request)
+		if err = json.Unmarshal(jsonRequest, reqValuePtr.Interface()); err != nil {
+			err = errors.Wrapf(err, "failed to decode request into %v", o.ReqType())
+			return
+		}
+
+		if m.Header.EchoRequest {
+			//note: echoes how we interpreted it, not always as it was sent
+			//so caller can see our interpretation
+			echoRequest = reqValuePtr.Elem().Interface()
+		}
+
+		if validator, ok := (reqValuePtr.Interface()).(ms.Validator); ok {
+			if err = validator.Validate(); err != nil {
+				err = errors.Wrapf(err, "invalid request")
+				return
+			}
+		}
+	}
+
+	//has a valid request
+	ctx := context.Background()
+
+	//call the operation handler function
+	results := o.FncValue().Call([]reflect.Value{
+		reflect.ValueOf(ctx),
+		reflect.ValueOf(reqValuePtr.Elem().Interface()),
+	})
+
+	//get err from last result
+	if err, ok := results[len(results)-1].Interface().(error); ok && err != nil {
+		err = errors.Wrapf(err, "handler failed")
+		return
+	}
+
+	if len(results) == 2 {
+		res = results[0].Interface()
+	}
+	return
+} //handler.HandleRequest()
 
 //Send() sends a message to Nats on a given subject
 func (h *handler) Send(header map[string]string, subject string, data []byte) error {

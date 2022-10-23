@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"time"
 
-	"bitbucket.org/vservices/ms-vservices-ussd/comms"
-	"bitbucket.org/vservices/ms-vservices-ussd/comms/nats"
 	"bitbucket.org/vservices/ms-vservices-ussd/examples/pcm"
+	"bitbucket.org/vservices/ms-vservices-ussd/ms"
+	"bitbucket.org/vservices/ms-vservices-ussd/ms/nats"
 	httpSessionsClient "bitbucket.org/vservices/ms-vservices-ussd/rest-sessions/client"
 	"bitbucket.org/vservices/ms-vservices-ussd/ussd"
 	"bitbucket.org/vservices/utils/v4/errors"
@@ -19,13 +19,16 @@ import (
 var log = logger.NewLogger()
 
 func main() {
+	//define session storage
 	ussd.SetSessions(httpSessionsClient.New("http://localhost:8100"))
+
+	//define NATS interface
 	nc := nats.Config{
-		Name:               "ussd",
+		Domain:             "ussd",
 		Url:                "nats://localhost:4222",
 		Secure:             false,
 		InsecureSkipVerify: true,
-		Username:           "",
+		//Username:           "",
 		//Password: "",
 		MaxReconnects: 10,
 		ReconnectWait: datatype.Duration(time.Second * 5),
@@ -35,33 +38,18 @@ func main() {
 		panic(fmt.Sprintf("cannot create comms handler: %+v", err))
 	}
 
-	r := responder{ch: commsHandler}
+	//responder sends responses
+	... no longer needed? remove request and wait ... r := responder{ch: commsHandler}
 	ussd.AddResponder(r)
 
 	s := service{ch: commsHandler}
-	if err := commsHandler.Subscribe("ussd", false, s.handleRequest); err != nil {
-		panic(fmt.Sprintf("failed to subscriber: %+v", err))
+	if err := commsHandler.Run(s); err != nil {
+		panic(err)
 	}
-	x := make(chan bool)
-	<-x
 }
 
-// var initItem ussd.ItemWithInputHandler
-
-// func init() {
-// 	menu123 := ussd.NewMenu("123", "*** MAIN MENU ***").
-// 		With("one", nil).
-// 		With("two", nil).
-// 		With("three", nil).
-// 		With("four", nil).
-// 		With("Exit", ussd.NewFinal("exit", "Goodbye."))
-
-// 	initItem = ussd.NewRouter("mainRouter").
-// 		WithCode("*123#", menu123)
-// }
-
 type service struct {
-	ch comms.Handler
+	ch ms.Handler
 }
 
 func (s service) handleRequest(data []byte, replyAddress string) {
@@ -141,45 +129,13 @@ func (s service) handleRequest(data []byte, replyAddress string) {
 	return
 }
 
-type Message struct {
-	Header   MessageHeader  `json:"header"`
-	Request  *ussdRequest   `json:"request,omitempty"`
-	Response *ussd.Response `json:"response,omitempty"`
-}
-
-type MessageHeader struct {
-	Timestamp    string               `json:"timestamp"`
-	TTL          int                  `json:"ttl"`
-	ReplyAddress string               `json:"reply_address"`
-	Result       *MessageHeaderResult `json:"result,omitempty"`
-}
-
-type MessageHeaderResult struct {
-	Code        int    `json:"code"`
-	Description string `json:"description,omitempty"`
-	Details     string `json:"details,omitempty"`
-}
-
-type ussdRequest struct {
-	Msisdn string `json:"msisdn"`
-	Text   string `json:"text"`
-	Type   string `json:"type"`
-}
-
-type ussdResponse struct {
-	Type string `json:"type"`
-	Text string `json:"text"`
-}
-
-const tsformat = "2006-01-02 15:04:05.000"
-
 // if len(subject) <= 0 {
 // 	subject = strings.Replace(message.Header.Provider.Name, "/", ".", -1)
 // 	subject = strings.Replace(subject, ".", "", 1)
 // } // if not subject
 
 type responder struct {
-	ch comms.Handler
+	ch ms.Handler
 }
 
 func (r responder) ID() string { return "nats" }
